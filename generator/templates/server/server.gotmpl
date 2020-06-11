@@ -78,6 +78,8 @@ var ({{ if .ExcludeSpec }}
   tlsCertificate    string
   tlsCertificateKey string
   tlsCACertificate  string
+  tlsClientAuth     int
+  tlsClientAuthType int
 )
 
 {{ if .UseFlags}}
@@ -184,6 +186,7 @@ func NewServer(api *{{ .Package }}.{{ pascalize .Name }}API) *Server {
 	s.TLSCertificate = stringEnvOverride(tlsCertificate, "", "TLS_CERTIFICATE")
 	s.TLSCertificateKey = stringEnvOverride(tlsCertificateKey, "", "TLS_PRIVATE_KEY")
 	s.TLSCACertificate = stringEnvOverride(tlsCACertificate, "", "TLS_CA_CERTIFICATE")
+	s.TLSClientAuth = tls.RequireAndVerifyClientCert
 	s.TLSListenLimit = tlsListenLimit
 	s.TLSKeepAlive = tlsKeepAlive
 	s.TLSReadTimeout = tlsReadTimeout
@@ -235,6 +238,7 @@ type Server struct {
 	TLSCertificate    {{ if not .UseGoStructFlags }}string{{ else }}flags.Filename `long:"tls-certificate" description:"the certificate to use for secure connections" env:"TLS_CERTIFICATE"`{{ end }}
 	TLSCertificateKey {{ if not .UseGoStructFlags }}string{{ else }}flags.Filename `long:"tls-key" description:"the private key to use for secure connections" env:"TLS_PRIVATE_KEY"`{{ end }}
 	TLSCACertificate  {{ if not .UseGoStructFlags }}string{{ else }}flags.Filename `long:"tls-ca" description:"the certificate authority file to be used with mutual tls auth" env:"TLS_CA_CERTIFICATE"`{{ end }}
+	TLSClientAuthType tls.ClientAuthType{{ if .UseGoStructFlags }}            `long:"tls-client-auth-type" description:"if CA certificate specified, client auth type; default RequireAndVerifyClientCert, can be VerifyClientCertIfGiven"`{{ end }}
 	TLSListenLimit    int{{ if .UseGoStructFlags }}            `long:"tls-listen-limit" description:"limit the number of outstanding requests"`{{ end }}
 	TLSKeepAlive      time.Duration{{ if .UseGoStructFlags }}  `long:"tls-keep-alive" description:"sets the TCP keep-alive timeouts on accepted connections. It prunes dead TCP connections ( e.g. closing laptop mid-download)"`{{ end }}
 	TLSReadTimeout    time.Duration{{ if .UseGoStructFlags }}  `long:"tls-read-timeout" description:"maximum duration before timing out read of the request"`{{ end }}
@@ -433,7 +437,13 @@ func (s *Server) Serve() (err error) {
 				return fmt.Errorf("cannot parse CA certificate")
 			}
 			httpsServer.TLSConfig.ClientCAs = caCertPool
-			httpsServer.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+
+			// If a TLS client auth type was specified, use it; else the default, tls.RequireAndVerifyClientCert
+			if s.TLSClientAuthType != tls.NoClientCert {
+			    httpsServer.TLSConfig.ClientAuth = s.TLSClientAuthType
+			} else {
+			    httpsServer.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			}
 		}
 
 		// call custom TLS configurator
